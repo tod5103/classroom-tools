@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ReadFlow – 智慧英文閱讀練習</title>
+  <meta name="description" content="以艾賓浩斯遺忘曲線為基礎的智慧英文意群閱讀練習工具，支援語音朗讀、視覺同步、遮蔽模式與自適應記憶。" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'Noto Sans TC', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50:  '#f0f4ff',
+              100: '#dce6ff',
+              200: '#b9cdff',
+              300: '#86a8ff',
+              400: '#4d7aff',
+              500: '#2255f5',
+              600: '#1340e0',
+              700: '#102fbc',
+              800: '#132999',
+              900: '#152679',
+            }
+          },
+          animation: {
+            'fade-in': 'fadeIn 0.4s ease',
+            'slide-up': 'slideUp 0.4s ease',
+            'pulse-glow': 'pulseGlow 1.5s ease-in-out infinite',
+          },
+          keyframes: {
+            fadeIn:    { from: { opacity: 0 }, to: { opacity: 1 } },
+            slideUp:   { from: { opacity: 0, transform: 'translateY(16px)' }, to: { opacity: 1, transform: 'translateY(0)' } },
+            pulseGlow: { '0%,100%': { boxShadow: '0 0 0 0 rgba(34,85,245,0.35)' }, '50%': { boxShadow: '0 0 0 8px rgba(34,85,245,0)' } },
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* ── global reset & scrollbar ── */
+    html { scroll-behavior: smooth; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+    /* ── chunk tokens ── */
+    .chunk {
+      display: inline;
+      padding: 2px 6px;
+      border-radius: 6px;
+      transition: opacity 0.3s, background 0.3s, color 0.3s;
+      cursor: default;
+      line-height: 2.2;
+      user-select: none;
+    }
+    .chunk.dim   { opacity: 0.30; }
+    .chunk.active {
+      opacity: 1;
+      background: #dce6ff;
+      color: #102fbc;
+      font-weight: 600;
+      animation: pulseGlow 1.5s ease-in-out infinite;
+    }
+    .chunk.cloze-hidden {
+      background: #1e293b;
+      color: transparent;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .chunk.cloze-hidden:hover { background: #334155; }
+    .chunk.cloze-revealed {
+      background: #dcfce7;
+      color: #166534;
+      font-weight: 600;
+    }
+
+    /* ── rating buttons ── */
+    .rating-btn {
+      flex: 1;
+      padding: 10px 0;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.875rem;
+      transition: transform 0.15s, box-shadow 0.15s;
+      cursor: pointer;
+    }
+    .rating-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
+    .rating-btn:active { transform: translateY(0); }
+
+    /* ── range slider ── */
+    input[type=range] {
+      -webkit-appearance: none;
+      height: 5px;
+      border-radius: 9999px;
+      background: #e2e8f0;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: #2255f5;
+      box-shadow: 0 2px 6px rgba(34,85,245,0.4);
+      transition: transform 0.15s;
+    }
+    input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+    /* ── toggle switch ── */
+    .toggle-track {
+      width: 44px; height: 24px;
+      border-radius: 9999px;
+      transition: background 0.25s;
+      position: relative;
+      cursor: pointer;
+    }
+    .toggle-thumb {
+      position: absolute;
+      top: 3px; left: 3px;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+      transition: transform 0.25s;
+    }
+    .toggle-track.on { background: #2255f5; }
+    .toggle-track.off { background: #cbd5e1; }
+    .toggle-track.on .toggle-thumb { transform: translateX(20px); }
+
+    /* ── stagger animations ── */
+    .animate-slide-up { animation: slideUp 0.4s ease both; }
+    .delay-100 { animation-delay: 0.10s; }
+    .delay-200 { animation-delay: 0.20s; }
+    .delay-300 { animation-delay: 0.30s; }
+  </style>
+</head>
+<body class="bg-slate-50 font-sans min-h-screen">
+
+<!-- ═══════════════════════════════════════════════════════════
+     HEADER
+════════════════════════════════════════════════════════════ -->
+<header class="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-100 shadow-sm">
+  <div class="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center shadow">
+        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.966 8.966 0 00-6 2.292m0-14.25v14.25"/>
+        </svg>
+      </div>
+      <span class="font-bold text-slate-800 text-lg tracking-tight">ReadFlow</span>
+      <span class="hidden sm:block text-xs text-slate-400 ml-1">智慧英文閱讀練習</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <button id="btnLibrary" onclick="showPage('library')"
+        class="text-sm text-slate-600 hover:text-brand-600 font-medium transition-colors px-3 py-1.5 rounded-lg hover:bg-brand-50">
+        📚 文章庫
+      </button>
+      <button onclick="showPage('input')"
+        class="text-sm bg-brand-500 hover:bg-brand-600 text-white font-medium px-4 py-1.5 rounded-lg transition-colors shadow-sm">
+        ＋ 新增文章
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE: INPUT
+════════════════════════════════════════════════════════════ -->
+<div id="page-input" class="page max-w-3xl mx-auto px-4 py-12">
+  <div class="animate-slide-up text-center mb-10">
+    <h1 class="text-4xl font-bold text-slate-800 mb-3 tracking-tight">開始你的閱讀練習</h1>
+    <p class="text-slate-500 text-lg">貼入任何英文段落，系統將自動拆解意群並同步語音朗讀。</p>
+  </div>
+
+  <div class="animate-slide-up delay-100 bg-white rounded-2xl shadow-sm border border-slate-100 p-6 mb-5">
+    <label class="block text-sm font-semibold text-slate-600 mb-3 uppercase tracking-wider">文章標題（選填）</label>
+    <input id="articleTitle" type="text" placeholder="例如：BBC News – Technology"
+      class="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-700 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-300 transition" />
+  </div>
+
+  <div class="animate-slide-up delay-200 bg-white rounded-2xl shadow-sm border border-slate-100 p-6 mb-6">
+    <label class="block text-sm font-semibold text-slate-600 mb-3 uppercase tracking-wider">貼入英文文章</label>
+    <textarea id="articleText" rows="10" placeholder="Paste your English article here...&#10;&#10;Example:&#10;The quick brown fox jumps over the lazy dog. It has been said that this sentence contains every letter of the alphabet."
+      class="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-700 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-300 transition resize-none leading-relaxed"></textarea>
+    <div class="flex justify-end mt-2">
+      <span id="charCount" class="text-xs text-slate-400">0 字元</span>
+    </div>
+  </div>
+
+  <div class="animate-slide-up delay-300">
+    <button onclick="startPractice()"
+      class="w-full bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white font-bold text-lg py-4 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 010 1.972l-11.54 6.347a1.125 1.125 0 01-1.667-.986V5.653z"/>
+      </svg>
+      開始練習
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE: LIBRARY
+════════════════════════════════════════════════════════════ -->
+<div id="page-library" class="page hidden max-w-3xl mx-auto px-4 py-12">
+  <div class="text-center mb-10">
+    <h1 class="text-3xl font-bold text-slate-800 mb-3">📚 文章庫</h1>
+    <p class="text-slate-500">所有已儲存的練習文章與進度</p>
+  </div>
+  <div id="libraryList" class="space-y-4"></div>
+  <div id="libraryEmpty" class="hidden text-center py-24">
+    <div class="text-6xl mb-4">📖</div>
+    <p class="text-slate-400 text-lg">尚無文章，快去新增第一篇吧！</p>
+    <button onclick="showPage('input')" class="mt-6 bg-brand-500 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-brand-600 transition">新增文章</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE: PRACTICE
+════════════════════════════════════════════════════════════ -->
+<div id="page-practice" class="page hidden max-w-3xl mx-auto px-4 py-8">
+
+  <!-- Top bar -->
+  <div class="flex items-center justify-between mb-6">
+    <button onclick="exitPractice()" class="flex items-center gap-2 text-slate-500 hover:text-slate-800 transition font-medium text-sm">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"/>
+      </svg>
+      返回文章庫
+    </button>
+    <h2 id="practiceTitle" class="text-slate-700 font-semibold text-sm truncate max-w-[60%]"></h2>
+    <div class="flex items-center gap-2 text-sm text-slate-500">
+      <span id="progressLabel">0 / 0</span>
+    </div>
+  </div>
+
+  <!-- Progress bar -->
+  <div class="w-full bg-slate-100 rounded-full h-1.5 mb-8">
+    <div id="progressBar" class="bg-brand-500 h-1.5 rounded-full transition-all duration-500" style="width:0%"></div>
+  </div>
+
+  <!-- Controls toolbar -->
+  <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 mb-6 flex flex-wrap gap-4 items-center">
+    <!-- Play / Pause -->
+    <button id="btnPlay" onclick="togglePlay()"
+      class="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white font-semibold px-5 py-2.5 rounded-xl transition shadow">
+      <svg id="iconPlay" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 010 1.972l-11.54 6.347a1.125 1.125 0 01-1.667-.986V5.653z"/>
+      </svg>
+      <span id="lblPlay">播放</span>
+    </button>
+    <!-- Reset -->
+    <button onclick="resetPlayback()"
+      class="flex items-center gap-2 text-slate-600 hover:text-slate-800 border border-slate-200 hover:border-slate-300 px-4 py-2.5 rounded-xl transition text-sm font-medium">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-4.566l3.179 3.182"/>
+      </svg>
+      重置
+    </button>
+
+    <!-- Speed -->
+    <div class="flex items-center gap-2 ml-auto">
+      <span class="text-xs text-slate-500 font-medium">語速</span>
+      <input id="speedSlider" type="range" min="0.5" max="2" step="0.1" value="1"
+        oninput="updateSpeed(this.value)" class="w-24" />
+      <span id="speedLabel" class="text-xs font-bold text-brand-600 w-8 text-center">1.0×</span>
+    </div>
+
+    <!-- Cloze toggle -->
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-slate-500 font-medium">遮蔽</span>
+      <div id="clozeToggle" class="toggle-track off" onclick="toggleCloze()">
+        <div class="toggle-thumb"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sentence / Chunk display -->
+  <div id="chunkDisplay" class="bg-white rounded-2xl border border-slate-100 shadow-sm p-8 mb-6 min-h-[160px] flex items-center justify-center">
+    <p class="text-slate-300 text-lg">按下「播放」開始練習</p>
+  </div>
+
+  <!-- Rating panel (shown after each sentence) -->
+  <div id="ratingPanel" class="hidden bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+    <p class="text-sm text-slate-500 mb-3 text-center font-medium">這個句子你掌握得如何？</p>
+    <div class="flex gap-3">
+      <button class="rating-btn bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+        onclick="rateChunk('easy')">😊 簡單</button>
+      <button class="rating-btn bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
+        onclick="rateChunk('fuzzy')">🤔 模糊</button>
+      <button class="rating-btn bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+        onclick="rateChunk('hard')">😰 困難</button>
+    </div>
+    <div id="nextHint" class="hidden mt-3 text-center text-xs text-slate-400"></div>
+  </div>
+
+  <!-- Due queue info -->
+  <div id="dueInfo" class="mt-4 text-center text-xs text-slate-400 hidden"></div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TOAST NOTIFICATION
+════════════════════════════════════════════════════════════ -->
+<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-5 py-2.5 rounded-full text-sm shadow-xl opacity-0 pointer-events-none transition-opacity duration-300 z-50"></div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════════════════════════ -->
+<script>
+/* ──────────────────────────────────────────────
+   CONSTANTS & STATE
+────────────────────────────────────────────── */
+const LS_ARTICLES = 'rf_articles';
+const LS_PROGRESS = 'rf_progress';
+
+let articles  = loadLS(LS_ARTICLES) || [];   // [{id, title, text, sentences, createdAt}]
+let progress  = loadLS(LS_PROGRESS) || {};   // {articleId: {sentIdx: {easeFactor, interval, due, reps}}}
+
+let currentArticleId = null;
+let sentences        = [];   // array of sentence strings
+let currentSentIdx   = 0;    // which sentence we're on
+let chunks           = [];   // array of chunk strings for current sentence
+let currentChunkIdx  = -1;
+let isPlaying        = false;
+let playbackRate     = 1.0;
+let clozeMode        = false;
+let revealedClozes   = new Set();
+let utterance        = null;
+let chunkTimer       = null;
+let pauseTimer       = null;
+
+/* ──────────────────────────────────────────────
+   UTILS
+────────────────────────────────────────────── */
+function loadLS(key) { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } }
+function saveLS(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.opacity = '1';
+  setTimeout(() => { t.style.opacity = '0'; }, 2200);
+}
+
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+  document.getElementById('page-' + name).classList.remove('hidden');
+  if (name === 'library') renderLibrary();
+}
+
+/* ──────────────────────────────────────────────
+   SMART CHUNKING  – syntactic-slot state machine
+   每個句子拆解為：[主詞NP] / [動詞組] / [受詞NP] / [介系詞片語] …
+   規則：
+     • 人稱代名詞（I/he/she…）→ 獨立成塊
+     • 助動詞（is/have/will…）→ 結束主詞塊，開始動詞塊
+     • 主要動詞（-s/-ed 形態或緊接助動詞後的詞）→ 結束動詞塊
+     • 介系詞 → 結束當前塊，收集整個PP為一塊
+     • 對等連接詞（and/but…）→ 獨立塊，重置為主詞狀態
+     • 從屬連接詞（because/that…）→ 獨立塊，重置為主詞狀態
+     • 逗號/分號等標點後 → 重置為主詞狀態
+────────────────────────────────────────────── */
+function chunkSentence(sentence) {
+  const AUX = new Set([
+    'am','is','are','was','were','be','been','being',
+    'have','has','had','do','does','did',
+    'will','would','shall','should','can','could','may','might','must'
+  ]);
+  const PREPS = new Set([
+    'in','on','at','by','for','with','about','against','between','among',
+    'through','during','before','after','above','below','to','from',
+    'up','down','of','off','over','under','into','onto','upon','within',
+    'without','across','along','around','behind','beside','beyond',
+    'inside','outside','near','past','since','toward','via'
+  ]);
+  const DETS = new Set([
+    'a','an','the','my','your','his','her','its','our','their',
+    'each','every','some','any','no','all','both','several',
+    'many','few','much','little','another','other'
+  ]);
+  // Subject/object pronouns — always a solo chunk
+  const PRONOUNS = new Set(['i','me','you','he','him','she','her','it','we','us','they','them']);
+  // Demonstratives: solo when used as pronoun (next word is aux/verb)
+  const DEMOS = new Set(['this','that','these','those']);
+  const COORDS = new Set(['and','but','or','nor','yet']);
+  const SUBS   = new Set([
+    'because','although','though','while','until','unless',
+    'whenever','wherever','whether','once','if','as'
+  ]);
+  const REL    = new Set(['who','whom','whose','which','where','when','whereby']);
+
+  // Morphological verb heuristic (no POS tagger available)
+  function looksLikeMainVerb(w) {
+    const c = w.toLowerCase().replace(/[^a-z]/g,'');
+    if (AUX.has(c)) return false;
+    // 3rd-person singular: ends -s/-es (but not -ss, -us, -ous, -ness, -ness)
+    if (/[^s]es?$/.test(c) && !/ss$|[aeiou]s$|ous$|ness$/.test(c) && c.length > 3) return true;
+    // Simple past / past participle: ends -ed
+    if (/[^aeiou]ed$/.test(c) && c.length > 4) return true;
+    return false;
+  }
+
+  const words = sentence.trim().split(/\s+/);
+  const result = [];
+  let cur   = [];
+  // state: 'S'=expecting subject  |  'V'=expecting/in verb  |  'C'=complement  |  'P'=PP
+  let state = 'S';
+
+  const flush = () => { if (cur.length) { result.push(cur.join(' ')); cur = []; } };
+
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    const c = w.toLowerCase().replace(/[^a-z']/g, '');
+
+    // ── Reset on punctuation after previous word ──────────
+    if (i > 0 && /[,;:—–]$/.test(words[i-1])) { flush(); state = 'S'; }
+
+    // ── Coordinator → solo chunk, reset ──────────────────
+    if (COORDS.has(c)) { flush(); cur.push(w); flush(); state = 'S'; continue; }
+
+    // ── Subordinator / relative → solo chunk, reset ───────
+    if (SUBS.has(c) || REL.has(c)) { flush(); cur.push(w); flush(); state = 'S'; continue; }
+
+    // ── "that" as clause introducer (after ≥1 word) ───────
+    if (c === 'that' && cur.length >= 1) { flush(); cur.push(w); flush(); state = 'S'; continue; }
+
+    // ── Preposition → flush current, start PP ────────────
+    if (PREPS.has(c)) { flush(); cur.push(w); state = 'P'; continue; }
+
+    // ─────────────────────────────────────────────────────
+    if (state === 'S') {
+      // Subject pronouns → solo, then expect verb
+      if (PRONOUNS.has(c)) { flush(); cur.push(w); flush(); state = 'V'; continue; }
+      // Demonstratives: solo if next word is AUX (pronoun use), else det use
+      if (DEMOS.has(c)) {
+        const nxt = i+1 < words.length ? words[i+1].toLowerCase().replace(/[^a-z]/g,'') : '';
+        if (AUX.has(nxt)) { flush(); cur.push(w); flush(); state = 'V'; continue; }
+        cur.push(w); continue; // det use — keep building subject NP
+      }
+      // AUX at start (interrogative) → flush subject NP, start VP
+      if (AUX.has(c)) { flush(); cur.push(w); state = 'V'; continue; }
+      // Word that looks like a main verb → flush subject NP, emit verb
+      if (looksLikeMainVerb(c) && cur.length > 0) {
+        flush(); cur.push(w); flush(); state = 'C'; continue;
+      }
+      // Look-ahead: if next word is AUX → this word ends the subject NP
+      // (we'll flush when we hit the AUX above)
+      cur.push(w);
+
+    } else if (state === 'V') {
+      if (AUX.has(c)) {
+        // Additional aux (e.g., "will have been") — keep in verb chunk
+        cur.push(w);
+      } else if (DETS.has(c) || PRONOUNS.has(c) || DEMOS.has(c)) {
+        // The aux(es) alone are the full verb (copula); start complement NP
+        flush();
+        if (PRONOUNS.has(c) || DEMOS.has(c)) { cur.push(w); flush(); state = 'C'; }
+        else { cur.push(w); state = 'C'; }
+      } else {
+        // Main verb word — attach to aux cluster, then flush
+        cur.push(w); flush(); state = 'C';
+      }
+
+    } else if (state === 'C') {
+      // Complement / object NP
+      if (PRONOUNS.has(c)) { flush(); cur.push(w); flush(); }
+      else if (DEMOS.has(c)) { flush(); cur.push(w); flush(); }
+      else if (DETS.has(c) && cur.length > 0) { flush(); cur.push(w); } // new NP
+      else { cur.push(w); }
+
+    } else { // state === 'P'  (inside PP)
+      cur.push(w);
+    }
+  }
+  flush();
+  return result.filter(x => x.trim());
+}
+
+/* Split article text into sentences */
+function splitSentences(text) {
+  // Split on . ! ? followed by space or end
+  const raw = text.replace(/([.!?])\s+/g, '$1\n').split('\n');
+  return raw.map(s => s.trim()).filter(s => s.length > 2);
+}
+
+/* ──────────────────────────────────────────────
+   INPUT PAGE
+────────────────────────────────────────────── */
+document.getElementById('articleText').addEventListener('input', function() {
+  document.getElementById('charCount').textContent = this.value.length + ' 字元';
+});
+
+function startPractice() {
+  const text  = document.getElementById('articleText').value.trim();
+  const title = document.getElementById('articleTitle').value.trim() || '未命名文章 ' + new Date().toLocaleDateString('zh-TW');
+  if (!text) { showToast('請先貼入英文文章'); return; }
+
+  const sents = splitSentences(text);
+  if (!sents.length) { showToast('無法拆解句子，請確認文章內容'); return; }
+
+  const id = uid();
+  const article = { id, title, text, sentences: sents, createdAt: Date.now() };
+  articles.push(article);
+  saveLS(LS_ARTICLES, articles);
+
+  // Init progress for each sentence (SM-2 defaults)
+  if (!progress[id]) {
+    progress[id] = {};
+    sents.forEach((_, i) => {
+      progress[id][i] = { easeFactor: 2.5, interval: 0, due: 0, reps: 0 };
+    });
+    saveLS(LS_PROGRESS, progress);
+  }
+
+  document.getElementById('articleText').value = '';
+  document.getElementById('articleTitle').value = '';
+  document.getElementById('charCount').textContent = '0 字元';
+
+  openPractice(id);
+}
+
+/* ──────────────────────────────────────────────
+   LIBRARY PAGE
+────────────────────────────────────────────── */
+function renderLibrary() {
+  const list  = document.getElementById('libraryList');
+  const empty = document.getElementById('libraryEmpty');
+  list.innerHTML = '';
+  if (!articles.length) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+
+  articles.slice().reverse().forEach(a => {
+    const prog  = progress[a.id] || {};
+    const total = a.sentences.length;
+    const due   = Object.values(prog).filter(p => p.due <= Date.now()).length;
+    const done  = Object.values(prog).filter(p => p.reps > 0).length;
+    const pct   = total ? Math.round(done / total * 100) : 0;
+
+    const card = document.createElement('div');
+    card.className = 'bg-white rounded-2xl border border-slate-100 shadow-sm p-5 hover:shadow-md transition flex flex-col sm:flex-row sm:items-center gap-4';
+    card.innerHTML = `
+      <div class="flex-1 min-w-0">
+        <!-- Title row: static view -->
+        <div id="title-view-${a.id}" class="flex items-center gap-1.5">
+          <h3 class="font-semibold text-slate-800 truncate">${escHtml(a.title)}</h3>
+          ${due > 0 ? `<span class="shrink-0 text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-medium">${due} 句待複習</span>` : ''}
+          <button onclick="event.stopPropagation();startRename('${a.id}')"
+            title="重新命名"
+            class="shrink-0 ml-1 text-slate-300 hover:text-brand-500 transition">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
+            </svg>
+          </button>
+        </div>
+        <!-- Title row: edit mode -->
+        <div id="title-edit-${a.id}" class="hidden flex items-center gap-2">
+          <input id="rename-input-${a.id}" type="text" value="${escHtml(a.title)}"
+            class="flex-1 border border-brand-300 rounded-lg px-2.5 py-1 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-300"
+            onkeydown="handleRenameKey(event,'${a.id}')" />
+          <button onclick="event.stopPropagation();commitRename('${a.id}')"
+            class="text-xs bg-brand-500 text-white px-2.5 py-1 rounded-lg hover:bg-brand-600 transition font-medium">確認</button>
+          <button onclick="event.stopPropagation();cancelRename('${a.id}')"
+            class="text-xs text-slate-400 hover:text-slate-600 px-1 transition">取消</button>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">${total} 個句子 · ${new Date(a.createdAt).toLocaleDateString('zh-TW')}</p>
+        <div class="mt-3 flex items-center gap-2">
+          <div class="flex-1 bg-slate-100 rounded-full h-1.5">
+            <div class="bg-brand-500 h-1.5 rounded-full transition-all" style="width:${pct}%"></div>
+          </div>
+          <span class="text-xs text-slate-500 w-8 text-right">${pct}%</span>
+        </div>
+      </div>
+      <div class="flex gap-2 shrink-0">
+        <button onclick="event.stopPropagation();openPractice('${a.id}')"
+          class="bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold px-4 py-2 rounded-xl transition">練習</button>
+        <button onclick="event.stopPropagation();deleteArticle('${a.id}')"
+          class="text-slate-400 hover:text-red-500 border border-slate-200 hover:border-red-200 text-sm px-3 py-2 rounded-xl transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.021-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
+          </svg>
+        </button>
+      </div>`;
+    list.appendChild(card);
+  });
+}
+
+/* ── Inline rename helpers ── */
+function startRename(id) {
+  document.getElementById('title-view-' + id).classList.add('hidden');
+  const editRow = document.getElementById('title-edit-' + id);
+  editRow.classList.remove('hidden');
+  const inp = document.getElementById('rename-input-' + id);
+  inp.focus();
+  inp.select();
+}
+
+function cancelRename(id) {
+  document.getElementById('title-edit-' + id).classList.add('hidden');
+  document.getElementById('title-view-' + id).classList.remove('hidden');
+}
+
+function commitRename(id) {
+  const inp   = document.getElementById('rename-input-' + id);
+  const newTitle = inp.value.trim();
+  if (!newTitle) { showToast('標題不可為空'); inp.focus(); return; }
+  const article = articles.find(a => a.id === id);
+  if (!article) return;
+  article.title = newTitle;
+  saveLS(LS_ARTICLES, articles);
+  showToast('已重新命名');
+  renderLibrary();
+}
+
+function handleRenameKey(e, id) {
+  if (e.key === 'Enter')  { e.preventDefault(); commitRename(id); }
+  if (e.key === 'Escape') { cancelRename(id); }
+}
+
+function deleteArticle(id) {
+  if (!confirm('確定要刪除這篇文章嗎？')) return;
+  articles = articles.filter(a => a.id !== id);
+  delete progress[id];
+  saveLS(LS_ARTICLES, articles);
+  saveLS(LS_PROGRESS, progress);
+  renderLibrary();
+  showToast('已刪除文章');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ──────────────────────────────────────────────
+   PRACTICE PAGE
+────────────────────────────────────────────── */
+function openPractice(id) {
+  stopPlayback();
+  const article = articles.find(a => a.id === id);
+  if (!article) return;
+  currentArticleId = id;
+  sentences        = article.sentences;
+  currentSentIdx   = 0;
+  currentChunkIdx  = -1;
+  clozeMode        = false;
+  revealedClozes   = new Set();
+  isPlaying        = false;
+
+  // Ensure progress record
+  if (!progress[id]) {
+    progress[id] = {};
+    sentences.forEach((_, i) => {
+      progress[id][i] = { easeFactor: 2.5, interval: 0, due: 0, reps: 0 };
+    });
+    saveLS(LS_PROGRESS, progress);
+  }
+
+  // Find first due sentence
+  currentSentIdx = getNextDueIndex();
+
+  document.getElementById('practiceTitle').textContent = article.title;
+  updateClozeUI();
+  updateProgress();
+  renderSentence();
+  updatePlayUI();
+
+  showPage('practice');
+}
+
+function exitPractice() {
+  stopPlayback();
+  showPage('library');
+}
+
+/* Get next sentence due for review */
+function getNextDueIndex() {
+  const prog = progress[currentArticleId];
+  const now  = Date.now();
+  // Find first due sentence (due <= now), or the earliest upcoming
+  let bestIdx  = 0;
+  let bestTime = Infinity;
+  for (let i = 0; i < sentences.length; i++) {
+    const p = prog[i];
+    if (p.due <= now) return i; // due now
+    if (p.due < bestTime) { bestTime = p.due; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
+function updateProgress() {
+  const prog = progress[currentArticleId];
+  const total = sentences.length;
+  const done  = Object.values(prog).filter(p => p.reps > 0).length;
+  document.getElementById('progressLabel').textContent = `${done} / ${total} 句`;
+  document.getElementById('progressBar').style.width   = (total ? done/total*100 : 0) + '%';
+
+  // Due info
+  const due = Object.values(prog).filter(p => p.due <= Date.now()).length;
+  const info = document.getElementById('dueInfo');
+  if (due > 0) {
+    info.textContent = `目前有 ${due} 個句子待複習`;
+    info.classList.remove('hidden');
+  } else {
+    info.classList.add('hidden');
+  }
+}
+
+/* ──────────────────────────────────────────────
+   RENDER SENTENCE CHUNKS
+────────────────────────────────────────────── */
+function renderSentence() {
+  const display = document.getElementById('chunkDisplay');
+  const ratingPanel = document.getElementById('ratingPanel');
+
+  if (currentSentIdx >= sentences.length) {
+    display.innerHTML = '<div class="text-center"><div class="text-5xl mb-4">🎉</div><p class="text-slate-600 font-semibold text-lg">所有句子已完成！</p><p class="text-slate-400 text-sm mt-1">請稍後回來繼續複習</p></div>';
+    ratingPanel.classList.add('hidden');
+    return;
+  }
+
+  chunks = chunkSentence(sentences[currentSentIdx]);
+  revealedClozes = new Set();
+  currentChunkIdx = -1;
+  ratingPanel.classList.add('hidden');
+
+  display.innerHTML = '';
+  const wrapper = document.createElement('p');
+  wrapper.className = 'text-2xl text-slate-800 leading-loose text-center tracking-wide';
+
+  chunks.forEach((c, i) => {
+    const span = document.createElement('span');
+    span.id        = 'chunk-' + i;
+    span.className = 'chunk dim';
+    span.textContent = c;
+
+    if (clozeMode) {
+      span.classList.add('cloze-hidden');
+      span.onclick = () => revealCloze(i);
+    }
+
+    // Add a soft separator between chunks (not visible, just spacing)
+    if (i > 0) wrapper.appendChild(document.createTextNode(' '));
+    wrapper.appendChild(span);
+  });
+
+  display.appendChild(wrapper);
+}
+
+function highlightChunk(idx) {
+  chunks.forEach((_, i) => {
+    const el = document.getElementById('chunk-' + i);
+    if (!el) return;
+    el.classList.remove('active', 'dim');
+    el.classList.add(i === idx ? 'active' : 'dim');
+    if (clozeMode && !revealedClozes.has(i)) {
+      el.classList.add('cloze-hidden');
+    }
+  });
+}
+
+function clearHighlights() {
+  chunks.forEach((_, i) => {
+    const el = document.getElementById('chunk-' + i);
+    if (!el) return;
+    el.classList.remove('active');
+    el.classList.add('dim');
+  });
+}
+
+/* ──────────────────────────────────────────────
+   CLOZE MODE
+────────────────────────────────────────────── */
+function toggleCloze() {
+  clozeMode = !clozeMode;
+  updateClozeUI();
+  renderSentence();
+  if (isPlaying) { stopPlayback(); updatePlayUI(); }
+}
+
+function updateClozeUI() {
+  const t = document.getElementById('clozeToggle');
+  t.className = 'toggle-track ' + (clozeMode ? 'on' : 'off');
+}
+
+function revealCloze(idx) {
+  revealedClozes.add(idx);
+  const el = document.getElementById('chunk-' + idx);
+  if (!el) return;
+  el.classList.remove('cloze-hidden');
+  el.classList.add('cloze-revealed');
+  el.onclick = null;
+}
+
+/* ──────────────────────────────────────────────
+   PLAYBACK ENGINE
+────────────────────────────────────────────── */
+function togglePlay() {
+  if (isPlaying) stopPlayback();
+  else startPlayback();
+}
+
+function startPlayback() {
+  if (currentSentIdx >= sentences.length) return;
+  isPlaying = true;
+  updatePlayUI();
+  playChunks(0);
+}
+
+function stopPlayback() {
+  isPlaying = false;
+  if (utterance) {
+    try { window.speechSynthesis.cancel(); } catch(e) {}
+    utterance = null;
+  }
+  clearTimeout(chunkTimer);
+  clearTimeout(pauseTimer);
+  clearHighlights();
+  updatePlayUI();
+}
+
+function playChunks(idx) {
+  if (!isPlaying) return;
+  if (idx >= chunks.length) {
+    // Done with this sentence
+    isPlaying = false;
+    updatePlayUI();
+    clearHighlights();
+    showRatingPanel();
+    return;
+  }
+
+  currentChunkIdx = idx;
+  highlightChunk(idx);
+
+  // Speak this chunk
+  const utter = new SpeechSynthesisUtterance(chunks[idx]);
+  utter.lang  = 'en-US';
+  utter.rate  = playbackRate;
+
+  utter.onend = () => {
+    if (!isPlaying) return;
+    // 0.5 s pause before next chunk
+    pauseTimer = setTimeout(() => {
+      playChunks(idx + 1);
+    }, 500 / playbackRate);
+  };
+  utter.onerror = () => {
+    if (!isPlaying) return;
+    pauseTimer = setTimeout(() => playChunks(idx + 1), 200);
+  };
+
+  utterance = utter;
+  window.speechSynthesis.speak(utter);
+}
+
+function resetPlayback() {
+  stopPlayback();
+  renderSentence();
+}
+
+function updatePlayUI() {
+  const btn  = document.getElementById('btnPlay');
+  const icon = document.getElementById('iconPlay');
+  const lbl  = document.getElementById('lblPlay');
+  if (isPlaying) {
+    lbl.textContent = '暫停';
+    icon.innerHTML  = '<path d="M6 4h4v16H6zm8 0h4v16h-4z"/>';
+  } else {
+    lbl.textContent = '播放';
+    icon.innerHTML  = '<path d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 010 1.972l-11.54 6.347a1.125 1.125 0 01-1.667-.986V5.653z"/>';
+  }
+}
+
+function updateSpeed(v) {
+  playbackRate = parseFloat(v);
+  document.getElementById('speedLabel').textContent = parseFloat(v).toFixed(1) + '×';
+}
+
+/* ──────────────────────────────────────────────
+   RATING & SM-2 ADAPTIVE ALGORITHM
+   Based on the Ebbinghaus forgetting curve (SM-2)
+────────────────────────────────────────────── */
+function showRatingPanel() {
+  const panel = document.getElementById('ratingPanel');
+  panel.classList.remove('hidden');
+  document.getElementById('nextHint').classList.add('hidden');
+}
+
+function rateChunk(quality) {
+  // quality: 'easy' = 5, 'fuzzy' = 3, 'hard' = 1
+  const qMap = { easy: 5, fuzzy: 3, hard: 1 };
+  const q    = qMap[quality];
+
+  const prog = progress[currentArticleId];
+  let   p    = prog[currentSentIdx];
+
+  // SM-2 update
+  p.reps++;
+  if (q >= 3) {
+    if (p.reps === 1)      p.interval = 1;
+    else if (p.reps === 2) p.interval = 6;
+    else                   p.interval = Math.round(p.interval * p.easeFactor);
+    p.easeFactor = Math.max(1.3, p.easeFactor + 0.1 - (5-q)*(0.08 + (5-q)*0.02));
+  } else {
+    // Reset on hard
+    p.reps     = 0;
+    p.interval = 1;
+  }
+
+  const now = Date.now();
+  p.due = now + p.interval * 24 * 60 * 60 * 1000;
+
+  prog[currentSentIdx] = p;
+  saveLS(LS_PROGRESS, progress);
+
+  // Show next review time hint
+  const hint = document.getElementById('nextHint');
+  const days = p.interval;
+  hint.textContent = `下次複習：${days === 1 ? '明天' : days + ' 天後'}`;
+  hint.classList.remove('hidden');
+
+  updateProgress();
+
+  // Move to next sentence after a short delay
+  setTimeout(() => {
+    document.getElementById('ratingPanel').classList.add('hidden');
+    currentSentIdx = getNextDueIndex();
+    renderSentence();
+  }, 1200);
+}
+
+/* ──────────────────────────────────────────────
+   INIT
+────────────────────────────────────────────── */
+// Check if SpeechSynthesis is available
+if (!('speechSynthesis' in window)) {
+  console.warn('SpeechSynthesis not supported in this browser');
+}
+
+// Boot
+showPage(articles.length ? 'library' : 'input');
+</script>
+</body>
+</html>

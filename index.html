@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚡ 終極課堂互動系統</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="login-container card">
+        <h1>⚡ 終極課堂互動系統</h1>
+        <p>請輸入大廳代碼與你的暱稱來加入挑戰</p>
+        
+        <input type="text" id="pinInput" placeholder="遊戲/大廳的 PIN 碼" autocomplete="off" maxlength="10" style="text-align: center; font-weight: 800; font-size: 1.5rem; letter-spacing: 5px; color: var(--accent-color);">
+        
+        <input type="text" id="nicknameInput" placeholder="你的暱稱" autocomplete="off" style="text-align: center;">
+        
+        <button id="joinBtn" class="primary-btn" style="margin-top: 10px;">進入大廳 (Join)</button>
+        
+        <div class="host-link-wrapper" style="margin-top: 2rem;">
+            <a href="/host.html" class="host-link">⭐️ 我是老師/出題者 (建立控制台)</a>
+        </div>
+    </div>
+    <script>
+        // Check URL for PIN
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlPin = urlParams.get('pin');
+        if (urlPin) {
+            document.getElementById('pinInput').value = urlPin;
+        }
+
+        document.getElementById('joinBtn').addEventListener('click', () => {
+            const pin = document.getElementById('pinInput').value.trim();
+            const name = document.getElementById('nicknameInput').value.trim();
+            if(pin && name) {
+                localStorage.setItem('buzzer_pin', pin);
+                localStorage.setItem('buzzer_nickname', name);
+                window.location.href = '/player.html';
+            } else {
+                alert('請完整輸入 PIN 碼和暱稱喔！');
+            }
+        });
+        
+        document.getElementById('nicknameInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('joinBtn').click();
+            }
+        });
+    </script>
+</body>
+</html>

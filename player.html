@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>進入互動 | 終極課堂互動系統</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div id="playerContainer" class="player-container state-waiting">
+        <h2 id="playerNameDisplay" style="color: var(--text-muted); font-size: 1.2rem; margin-bottom: 2rem;"></h2>
+        <div id="statusText" class="status-text" style="margin-bottom: 1.5rem;">等待老師指派題目...</div>
+        
+        <!-- 模塊 1：搶答 -->
+        <div id="view-BUZZER" class="view-section">
+            <div class="buzzer-wrapper">
+                <button id="buzzer" class="buzzer">🔒</button>
+            </div>
+        </div>
+
+        <!-- 模塊 2：選擇題 -->
+        <div id="view-MCQ" class="view-section">
+            <div class="mcq-grid">
+                <button class="mcq-btn" style="background: #e21b3c;">A</button>
+                <button class="mcq-btn" style="background: #1368ce;">B</button>
+                <button class="mcq-btn" style="background: #d89e00;">C</button>
+                <button class="mcq-btn" style="background: #26890c;">D</button>
+            </div>
+        </div>
+
+        <!-- 模塊 3：簡答題 -->
+        <div id="view-TEXT" class="view-section">
+            <textarea id="textAnswer" placeholder="請輸入您的答案..."></textarea>
+            <button id="textSubmit" class="primary-btn">確認送出文字</button>
+        </div>
+
+        <!-- 模塊 4：畫圖題 -->
+        <div id="view-DRAW" class="view-section">
+            <!-- 鎖定長寬以確保手機端也能順利繪圖 -->
+            <canvas id="drawCanvas" width="300" height="300" style="background: white; border-radius: 10px; cursor: crosshair; touch-action: none;"></canvas>
+            <div style="display:flex; gap:10px; margin-top:20px; width:100%; max-width:300px;">
+                <button id="drawClear" class="secondary-btn" style="flex: 1;">清除重畫</button>
+                <button id="drawSubmit" class="primary-btn" style="flex: 1;">送出塗鴉</button>
+            </div>
+        </div>
+
+    </div>
+    <script>
+        const name = localStorage.getItem('buzzer_nickname') || '未知玩家';
+        document.getElementById('playerNameDisplay').textContent = "✏️ " + name;
+    </script>
+    <script src="player.js"></script>
+</body>
+</html>
